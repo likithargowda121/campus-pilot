@@ -5,8 +5,233 @@ const defaultTasks = ["Complete one DSA problem", "Revise one engineering topic"
 const todayTasks = JSON.parse(localStorage.getItem("placementTasks") || JSON.stringify(defaultTasks)).map((task) => typeof task === "string" ? task : task.name);
 defaultTasks.forEach((task) => { if (!todayTasks.includes(task)) todayTasks.push(task); });
 const taskDone = JSON.parse(localStorage.getItem("placementTaskProgress") || "[]");
+const taskOutcomes = JSON.parse(localStorage.getItem("placementTaskOutcomes") || "[]");
 const customHubs = JSON.parse(localStorage.getItem("placementCustomHubs") || "[]");
 customHubs.forEach((hub) => { links[hub.id] = Array.isArray(hub.sources) ? hub.sources : []; });
+const DAILY_HISTORY_KEY = "placementDailyHistory";
+
+function getDateKey(date = new Date()) {
+  const normalized = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return normalized.toISOString().slice(0, 10);
+}
+
+function getPreviousDateKey(dateKey) {
+  const date = new Date(`${dateKey}T00:00:00`);
+  date.setDate(date.getDate() - 1);
+  return getDateKey(date);
+}
+
+function getDailyHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(DAILY_HISTORY_KEY) || "{}");
+  } catch (error) {
+    return {};
+  }
+}
+
+function saveDailyHistory(history) {
+  localStorage.setItem(DAILY_HISTORY_KEY, JSON.stringify(history));
+}
+
+function getHistorySnapshot(dateKey) {
+  const history = getDailyHistory();
+  const snapshot = history[dateKey];
+
+  if (!snapshot || !Array.isArray(snapshot.tasks)) {
+    return { tasks: [], completed: [], outcomes: [] };
+  }
+
+  return {
+    tasks: snapshot.tasks,
+    completed: Array.isArray(snapshot.completed) ? snapshot.completed : [],
+    outcomes: Array.isArray(snapshot.outcomes) ? snapshot.outcomes : []
+  };
+}
+
+function persistDailyProgress() {
+  const history = getDailyHistory();
+  history[getDateKey()] = {
+    tasks: [...todayTasks],
+    completed: [...taskDone],
+    outcomes: [...taskOutcomes],
+    savedAt: Date.now()
+  };
+  saveDailyHistory(history);
+  renderYesterdayTasks();
+}
+
+function renderYesterdayTasks() {
+  const yesterdayList = document.getElementById("yesterdayTasksList");
+  if (!yesterdayList) return;
+
+  const yesterdayKey = getPreviousDateKey(getDateKey());
+  const snapshot = getHistorySnapshot(yesterdayKey);
+  const completedTaskNames = snapshot.tasks.filter((task, index) => snapshot.completed[index]);
+
+  if (!completedTaskNames.length) {
+    yesterdayList.innerHTML = "";
+    return;
+  }
+
+  yesterdayList.innerHTML = completedTaskNames.map((task) => `<li>${task}</li>`).join("");
+}
+
+function openHistoryCalendar() {
+  const historyDialog = document.getElementById("historyDialog");
+  if (!historyDialog) return;
+
+  selectedHistoryDate = getMostRecentCompletedDate();
+  historyCalendarDate = new Date(`${selectedHistoryDate}T00:00:00`);
+  historyDialog.showModal();
+  renderHistoryCalendar();
+  renderSelectedHistoryDate();
+  renderProgressDashboard();
+}
+
+function getMostRecentCompletedDate() {
+  const history = getDailyHistory();
+  const dates = Object.keys(history).filter((dateKey) => Array.isArray(history[dateKey].completed) && history[dateKey].completed.some(Boolean));
+  if (!dates.length) return getDateKey();
+  return [...dates].sort().at(-1);
+}
+
+function formatDisplayDate(dateKey) {
+  const date = new Date(`${dateKey}T00:00:00`);
+  return new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(date);
+}
+
+function formatMonthYear(date) {
+  return new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(date);
+}
+
+function getTasksForDate(dateKey) {
+  const snapshot = getTrackableSnapshot(dateKey);
+  return snapshot.tasks.filter((task, index) => snapshot.completed[index]);
+}
+
+function getTrackableSnapshot(dateKey) {
+  const snapshot = getHistorySnapshot(dateKey);
+  if (dateKey === getDateKey() && !snapshot.tasks.length) {
+    return { tasks: [...todayTasks], completed: [...taskDone], outcomes: [...taskOutcomes] };
+  }
+  return snapshot;
+}
+
+function renderSelectedHistoryDate() {
+  const dateLabel = document.getElementById("selectedHistoryDateLabel");
+  const dayList = document.getElementById("historyDayTaskList");
+
+  if (!dateLabel || !dayList) return;
+
+  dateLabel.textContent = formatDisplayDate(selectedHistoryDate);
+  const tasksForDate = getTasksForDate(selectedHistoryDate);
+
+  if (!tasksForDate.length) {
+    dayList.innerHTML = "<li>No tasks completed on this date.</li>";
+    return;
+  }
+
+  const snapshot = getTrackableSnapshot(selectedHistoryDate);
+  dayList.innerHTML = tasksForDate.map((task) => {
+    const taskIndex = snapshot.tasks.indexOf(task);
+    const outcome = snapshot.outcomes[taskIndex];
+    return `<li><strong>${escapeHtml(task)}</strong>${outcome ? `<span>${escapeHtml(outcome)}</span>` : ""}</li>`;
+  }).join("");
+}
+
+function renderHistoryCalendar() {
+  const calendarGrid = document.getElementById("calendarGrid");
+  const monthLabel = document.getElementById("calendarMonthLabel");
+  if (!calendarGrid || !monthLabel) return;
+
+  const monthDate = new Date(historyCalendarDate.getFullYear(), historyCalendarDate.getMonth(), 1);
+  monthLabel.textContent = formatMonthYear(monthDate);
+
+  const firstDayOfMonth = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1).getDay();
+  const daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+  const daysInPreviousMonth = new Date(monthDate.getFullYear(), monthDate.getMonth(), 0).getDate();
+
+  const cells = [];
+  for (let index = firstDayOfMonth - 1; index >= 0; index -= 1) {
+    const dayNumber = daysInPreviousMonth - index;
+    const date = new Date(monthDate.getFullYear(), monthDate.getMonth() - 1, dayNumber);
+    cells.push({ key: getDateKey(date), number: dayNumber, muted: true });
+  }
+
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const date = new Date(monthDate.getFullYear(), monthDate.getMonth(), day);
+    cells.push({ key: getDateKey(date), number: day, muted: false });
+  }
+
+  while (cells.length % 7 !== 0) {
+    const nextDay = cells.length - (firstDayOfMonth + daysInMonth) + 1;
+    const date = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, nextDay);
+    cells.push({ key: getDateKey(date), number: date.getDate(), muted: true });
+  }
+
+  calendarGrid.innerHTML = cells.map((cell) => {
+    const isSelected = cell.key === selectedHistoryDate;
+    const hasTasks = getTasksForDate(cell.key).length > 0;
+    const classes = ["calendar-day", cell.muted ? "muted" : "", hasTasks ? "has-tasks" : "", isSelected ? "selected" : ""].filter(Boolean).join(" ");
+    return `<button type="button" class="${classes}" data-date-key="${cell.key}" aria-label="View tasks for ${formatDisplayDate(cell.key)}">${cell.number}</button>`;
+  }).join("");
+}
+
+function setHistoryMonth(offset) {
+  const nextMonth = new Date(historyCalendarDate.getFullYear(), historyCalendarDate.getMonth() + offset, 1);
+  historyCalendarDate = nextMonth;
+  renderHistoryCalendar();
+}
+
+function getHistoryWindow() {
+  const dates = [];
+  const today = new Date(`${getDateKey()}T00:00:00`);
+  for (let offset = 13; offset >= 0; offset -= 1) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - offset);
+    dates.push(getDateKey(date));
+  }
+  return dates;
+}
+
+function renderProgressDashboard() {
+  const chart = document.getElementById("progressChart");
+  const summary = document.getElementById("progressSummary");
+  const topicList = document.getElementById("topicProgressList");
+  if (!chart || !summary || !topicList) return;
+
+  const dates = getHistoryWindow();
+  const dailyData = dates.map((dateKey) => {
+    const snapshot = getTrackableSnapshot(dateKey);
+    const completed = snapshot.tasks.filter((task, index) => snapshot.completed[index]).length;
+    return { dateKey, completed, total: snapshot.tasks.length };
+  });
+  const completedTotal = dailyData.reduce((total, day) => total + day.completed, 0);
+  const trackedDays = dailyData.filter((day) => day.total > 0).length;
+  summary.textContent = `${completedTotal} completed across ${trackedDays} tracked day${trackedDays === 1 ? "" : "s"}`;
+  chart.innerHTML = dailyData.map((day) => {
+    const percent = day.total ? Math.round((day.completed / day.total) * 100) : 0;
+    const label = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(`${day.dateKey}T00:00:00`));
+    return `<div class="progress-day" title="${label}: ${day.completed}/${day.total} tasks"><div class="progress-bar-track"><div class="progress-bar-fill" style="height:${percent}%"></div></div><strong>${day.completed}</strong><span>${label}</span></div>`;
+  }).join("");
+
+  const topicTotals = {};
+  dailyData.forEach((day) => {
+    const snapshot = getTrackableSnapshot(day.dateKey);
+    snapshot.tasks.forEach((task, index) => {
+      const topic = String(task).trim();
+      if (!topic) return;
+      if (!topicTotals[topic]) topicTotals[topic] = { completed: 0, total: 0 };
+      topicTotals[topic].total += 1;
+      if (snapshot.completed[index]) topicTotals[topic].completed += 1;
+    });
+  });
+  const topics = Object.entries(topicTotals).sort(([, first], [, second]) => second.total - first.total);
+  topicList.innerHTML = topics.length ? topics.map(([topic, progress]) => {
+    const percent = Math.round((progress.completed / progress.total) * 100);
+    return `<div class="topic-progress-row"><div class="topic-progress-label"><span>${escapeHtml(topic)}</span><strong>${progress.completed}/${progress.total}</strong></div><div class="topic-progress-track"><span style="width:${percent}%"></span></div></div>`;
+  }).join("") : '<p class="empty-state">Complete a rhythm task to start tracking topics.</p>';
+}
 
 function normalizePriority(priority) {
   if (priority === "high") return 1;
@@ -40,9 +265,22 @@ const hubNameInput = document.getElementById("hubNameInput");
 const taskDialog = document.getElementById("taskDialog");
 const taskDialogTitle = document.getElementById("taskDialogTitle");
 const taskNameInput = document.getElementById("taskNameInput");
+const outcomeDialog = document.getElementById("outcomeDialog");
+const outcomeTaskLabel = document.getElementById("outcomeTaskLabel");
+const outcomeInput = document.getElementById("outcomeInput");
 const removeCardsDialog = document.getElementById("removeCardsDialog");
 const removeDsaInput = document.getElementById("removeDsaInput");
 const removeSubjectsInput = document.getElementById("removeSubjectsInput");
+const historyDialog = document.getElementById("historyDialog");
+const prevMonthButton = document.getElementById("prevMonthButton");
+const nextMonthButton = document.getElementById("nextMonthButton");
+const calendarGrid = document.getElementById("calendarGrid");
+const calendarMonthLabel = document.getElementById("calendarMonthLabel");
+const selectedHistoryDateLabel = document.getElementById("selectedHistoryDateLabel");
+const historyDayTaskList = document.getElementById("historyDayTaskList");
+let selectedHistoryDate = getDateKey();
+let historyCalendarDate = new Date();
+let pendingTaskIndex = null;
 
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[character]); }
 function hubDetails(resource) {
@@ -63,6 +301,12 @@ function renderLinks() {
     lists[key].innerHTML = saved.map((item, index) => `<div class="saved-link"><div class="saved-link-main"><span class="saved-link-name">${escapeHtml(item.name)}</span><span class="saved-link-host">${escapeHtml(new URL(item.url).hostname.replace("www.", ""))}</span>${item.description ? `<span class="saved-link-description">${escapeHtml(item.description)}</span>` : ""}<span class="priority-badge">${escapeHtml(item.priority)} priority</span></div><div class="saved-link-actions"><button class="menu-trigger" type="button" data-tooltip="Choose an action for this link" aria-label="Choose an action for ${escapeHtml(item.name)}" aria-expanded="false" onclick="toggleLinkMenu(this)">⋮</button><div class="link-menu"><a href="${escapeHtml(item.url)}">Open playlist ↗</a><button type="button" onclick="editLink('${key}', ${index})">Edit link</button><button class="delete-link" type="button" onclick="deleteLink('${key}', ${index})">Delete link</button></div></div></div>`).join("");
   });
 }
+function renderStudyTopicOptions() {
+  const topicOptions = document.getElementById("studyTopicOptions");
+  if (!topicOptions) return;
+  const topics = [...Object.values(links).flat().map((item) => item.name), ...customHubs.map((hub) => hub.name)].filter(Boolean);
+  topicOptions.innerHTML = [...new Set(topics)].map((topic) => `<option value="${escapeHtml(topic)}"></option>`).join("");
+}
 function toggleLinkMenu(trigger) {
   const menu = trigger.nextElementSibling;
   const isOpen = menu.classList.toggle("open");
@@ -74,7 +318,7 @@ function resetLinkForm() { linkForm.reset(); descriptionInput.value = ""; priori
 function openEditor(resource) { activeResource = resource; editingIndex = null; resetLinkForm(); document.getElementById("dialogTitle").textContent = resource === "dsa" ? "Add your DSA source" : resource === "subjects" ? "Add your subjects source" : `Add a source to ${hubDetails(resource).name}`; dialog.showModal(); nameInput.focus(); }
 function editLink(resource, index) { activeResource = resource; editingIndex = index; const item = links[resource][index]; document.getElementById("dialogTitle").textContent = "Edit saved source"; nameInput.value = item.name; descriptionInput.value = item.description || ""; priorityInput.value = normalizePriority(item.priority); input.value = item.url; dialog.showModal(); nameInput.focus(); }
 function deleteLink(resource, index) { const item = links[resource][index]; if (!window.confirm(`Delete "${item.name}" from your saved sources?`)) return; links[resource].splice(index, 1); persistLinks(); renderLinks(); if (document.getElementById("allDialog").open) renderAllPlaylists(); }
-function saveLink(event) { event.preventDefault(); if (savingLink) return; savingLink = true; saveLinkButton.disabled = true; const item = { name: nameInput.value.trim(), description: descriptionInput.value.trim(), priority: normalizePriority(priorityInput.value), url: input.value.trim() }; const duplicateIndex = links[activeResource].findIndex((saved) => saved.url === item.url && saved.url); if (editingIndex === null && duplicateIndex !== -1) links[activeResource][duplicateIndex] = item; else if (editingIndex === null) links[activeResource].push(item); else links[activeResource][editingIndex] = item; persistLinks(); const hub = customHubs.find((item) => item.id === activeResource); if (hub) { hub.sources = links[activeResource]; persistCustomHubs(); } renderLinks(); if (document.getElementById("allDialog").open) renderAllPlaylists(); resetLinkForm(); editingIndex = null; dialog.close(); }
+function saveLink(event) { event.preventDefault(); if (savingLink) return; savingLink = true; saveLinkButton.disabled = true; const item = { name: nameInput.value.trim(), description: descriptionInput.value.trim(), priority: normalizePriority(priorityInput.value), url: input.value.trim() }; const duplicateIndex = links[activeResource].findIndex((saved) => saved.url === item.url && saved.url); if (editingIndex === null && duplicateIndex !== -1) links[activeResource][duplicateIndex] = item; else if (editingIndex === null) links[activeResource].push(item); else links[activeResource][editingIndex] = item; persistLinks(); const hub = customHubs.find((item) => item.id === activeResource); if (hub) { hub.sources = links[activeResource]; persistCustomHubs(); } renderLinks(); renderStudyTopicOptions(); if (document.getElementById("allDialog").open) renderAllPlaylists(); resetLinkForm(); editingIndex = null; dialog.close(); }
 dialog.addEventListener("close", resetLinkForm);
 function refreshLinks() { let latest = {}; try { latest = JSON.parse(localStorage.getItem("placementLinks") || "{}"); } catch (error) {} Object.keys(links).forEach((key) => { const saved = latest[key]; const normalized = Array.isArray(saved) ? saved.map((item) => ({ name: item.name || "Saved source", url: item.url || "", description: item.description || "", priority: normalizePriority(item.priority) })) : typeof saved === "string" && saved ? [{ name: "Saved source", url: saved, description: "", priority: 1 }] : []; links[key].splice(0, links[key].length, ...normalized); }); }
 function resetSources(resource) { if (!window.confirm(`Remove all saved sources from ${hubDetails(resource).name}? This cannot be undone, but you can add them again afterward.`)) return; links[resource].splice(0, links[resource].length); persistLinks(); renderLinks(); if (document.getElementById("allDialog").open && allResource === resource) renderAllPlaylists(); }
@@ -83,22 +327,138 @@ function resetSubjectSources() { resetSources("subjects"); }
 function openAll(resource) { refreshLinks(); renderLinks(); allResource = resource; const title = resource === "dsa" ? "All DSA playlists" : resource === "subjects" ? "All engineering subject playlists" : `All ${hubDetails(resource).name} playlists`; document.getElementById("allDialogTitle").textContent = title; document.getElementById("priorityFilter").value = "all"; renderAllPlaylists(); document.getElementById("allDialog").showModal(); }
 function renderAllPlaylists() { const filter = document.getElementById("priorityFilter").value; const sorted = links[allResource].map((item, index) => ({ item, index })).filter(({ item }) => filter === "all" || String(item.priority) === filter).sort((a, b) => a.item.priority - b.item.priority); document.getElementById("allList").innerHTML = sorted.length ? sorted.map(({ item, index }) => `<article class="all-item"><div><h3>${escapeHtml(item.name)}</h3><span class="priority-badge">${escapeHtml(item.priority)} priority</span>${item.description ? `<p>${escapeHtml(item.description)}</p>` : "<p>No description added yet.</p>"}</div><div class="all-item-actions"><button class="menu-trigger" type="button" data-tooltip="Choose an action for this link" aria-label="Choose an action for ${escapeHtml(item.name)}" aria-expanded="false" onclick="toggleLinkMenu(this)">⋮</button><div class="link-menu"><a href="${escapeHtml(item.url)}">Open playlist ↗</a><button type="button" onclick="editLink('${allResource}', ${index})">Edit link</button><button class="delete-link" type="button" onclick="deleteLink('${allResource}', ${index})">Delete link</button></div></div></article>`).join("") : `<div class="empty-state">No playlists match this priority yet.</div>`; }
 function openHubCreator() { hubNameInput.value = ""; hubDialog.showModal(); hubNameInput.focus(); }
-function createStudyHub(event) { event.preventDefault(); const name = hubNameInput.value.trim(); if (!name) return; const id = `hub-${Date.now()}`; customHubs.push({ id, name, sources: [] }); links[id] = []; persistCustomHubs(); renderCustomHubs(); renderLinks(); hubDialog.close(); hubNameInput.value = ""; }
+function createStudyHub(event) { event.preventDefault(); const name = hubNameInput.value.trim(); if (!name) return; const id = `hub-${Date.now()}`; customHubs.push({ id, name, sources: [] }); links[id] = []; persistCustomHubs(); renderCustomHubs(); renderLinks(); renderStudyTopicOptions(); hubDialog.close(); hubNameInput.value = ""; }
 function applyHubVisibility() { document.getElementById("dsaCard").hidden = removedHubs.includes("dsa"); document.getElementById("subjectsCard").hidden = removedHubs.includes("subjects"); document.getElementById("restoreHubsButton").hidden = removedHubs.length === 0; }
 function openRemoveCards() { removeDsaInput.checked = removedHubs.includes("dsa"); removeSubjectsInput.checked = removedHubs.includes("subjects"); removeCardsDialog.showModal(); }
 function removeSelectedCards(event) { event.preventDefault(); const selected = []; if (removeDsaInput.checked) selected.push("dsa"); if (removeSubjectsInput.checked) selected.push("subjects"); if (!selected.length) return removeCardsDialog.close(); if (!window.confirm(`Remove ${selected.map((resource) => hubDetails(resource).name).join(" and ")} card${selected.length > 1 ? "s" : ""}? Your saved sources will stay safe and can be restored later.`)) return; removedHubs.splice(0, removedHubs.length, ...selected); localStorage.setItem("placementRemovedHubs", JSON.stringify(removedHubs)); applyHubVisibility(); removeCardsDialog.close(); }
 function restoreDefaultHubs() { removedHubs.splice(0, removedHubs.length); localStorage.setItem("placementRemovedHubs", JSON.stringify(removedHubs)); applyHubVisibility(); }
-function persistTasks() { localStorage.setItem("placementTasks", JSON.stringify(todayTasks)); localStorage.setItem("placementTaskProgress", JSON.stringify(taskDone)); }
-function updateProgress() { document.getElementById("completedCount").textContent = `${taskDone.slice(0, todayTasks.length).filter(Boolean).length}/${todayTasks.length}`; }
-function renderTasks() { document.getElementById("checklist").innerHTML = todayTasks.map((task, index) => `<label class="check-row"><input type="checkbox" ${taskDone[index] ? "checked" : ""} onchange="toggleTask(${index}, this.checked)" /><span>${escapeHtml(task)}</span><span class="task-actions"><button class="task-action" type="button" onclick="editTask(event, ${index})" aria-label="Edit task">✎</button><button class="task-action" type="button" onclick="deleteTask(event, ${index})" aria-label="Delete task">×</button></span></label>`).join(""); updateProgress(); }
-function toggleTask(index, checked) { taskDone[index] = checked; persistTasks(); updateProgress(); }
+function persistTasks() {
+  localStorage.setItem("placementTasks", JSON.stringify(todayTasks));
+  localStorage.setItem("placementTaskProgress", JSON.stringify(taskDone));
+  localStorage.setItem("placementTaskOutcomes", JSON.stringify(taskOutcomes));
+  persistDailyProgress();
+}
+function updateProgress() {
+  const completedCount = taskDone.slice(0, todayTasks.length).filter(Boolean).length;
+  document.getElementById("completedCount").textContent = `${completedCount} completed`;
+  renderFocusPanel();
+}
+function renderFocusPanel() {
+  const ring = document.getElementById("focusRing");
+  const percentLabel = document.getElementById("focusPercent");
+  const taskCount = document.getElementById("focusTaskCount");
+  if (!ring || !percentLabel || !taskCount) return;
+  const completedCount = taskDone.slice(0, todayTasks.length).filter(Boolean).length;
+  const percent = todayTasks.length ? Math.round((completedCount / todayTasks.length) * 100) : 0;
+  ring.style.setProperty("--focus-progress", `${percent * 3.6}deg`);
+  percentLabel.textContent = `${percent}%`;
+  taskCount.textContent = `${completedCount} of ${todayTasks.length}`;
+}
+function renderTasks() { document.getElementById("checklist").innerHTML = todayTasks.map((task, index) => `<label class="check-row" draggable="true" data-task-index="${index}"><span class="drag-handle" aria-hidden="true">⋮⋮</span><input type="checkbox" ${taskDone[index] ? "checked" : ""} onchange="toggleTask(${index}, this.checked)" /><span class="task-name">${escapeHtml(task)}</span><span class="task-actions"><button class="task-action" type="button" onclick="editTask(event, ${index})" aria-label="Edit task">✎</button><button class="task-action" type="button" onclick="deleteTask(event, ${index})" aria-label="Delete task">×</button></span></label>`).join(""); updateProgress(); renderCompletedToday(); }
+function reorderTask(fromIndex, toIndex) {
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
+  const moveItem = (items) => items.splice(toIndex, 0, items.splice(fromIndex, 1)[0]);
+  moveItem(todayTasks);
+  moveItem(taskDone);
+  moveItem(taskOutcomes);
+  persistTasks();
+  renderTasks();
+}
+function renderCompletedToday() {
+  const completedList = document.getElementById("completedTodayList");
+  if (!completedList) return;
+  const completedDate = document.getElementById("completedTodayDate");
+  if (completedDate) completedDate.textContent = formatDisplayDate(getDateKey());
+  const completedTasks = todayTasks.map((task, index) => ({ task, index })).filter(({ index }) => taskDone[index]);
+  if (!completedTasks.length) {
+    completedList.innerHTML = '<p class="completed-empty">Check off a task above to record what you accomplished.</p>';
+    return;
+  }
+  completedList.innerHTML = completedTasks.map(({ task, index }) => `<article class="completed-task"><div class="completed-task-heading"><span class="completed-check">✓</span><strong>${escapeHtml(task)}</strong></div><label class="outcome-label" for="taskOutcome-${index}">What did you complete?</label><textarea id="taskOutcome-${index}" class="task-outcome" placeholder="Add a result, insight, or note..." oninput="updateTaskOutcome(${index}, this.value)">${escapeHtml(taskOutcomes[index] || "")}</textarea></article>`).join("");
+}
+function toggleTask(index, checked) {
+  if (!checked) {
+    taskDone[index] = false;
+    taskOutcomes[index] = "";
+    persistTasks();
+    renderTasks();
+    return;
+  }
+  pendingTaskIndex = index;
+  outcomeTaskLabel.textContent = `Add a short note for “${todayTasks[index]}” so your progress shows the work behind the checkmark.`;
+  outcomeInput.value = taskOutcomes[index] || "";
+  outcomeDialog.showModal();
+  outcomeInput.focus();
+}
+function submitTaskOutcome(event) {
+  event.preventDefault();
+  if (pendingTaskIndex === null) return;
+  taskDone[pendingTaskIndex] = true;
+  taskOutcomes[pendingTaskIndex] = outcomeInput.value.trim();
+  pendingTaskIndex = null;
+  persistTasks();
+  renderTasks();
+  outcomeDialog.close();
+  outcomeInput.value = "";
+}
+function cancelTaskOutcome() {
+  pendingTaskIndex = null;
+  outcomeDialog.close();
+  renderTasks();
+}
+function updateTaskOutcome(index, outcome) { taskOutcomes[index] = outcome.trim(); persistTasks(); }
 function openTaskEditor(index = null) { editingTaskIndex = index; taskDialogTitle.textContent = index === null ? "Add a task" : "Edit task"; taskNameInput.value = index === null ? "" : todayTasks[index]; taskDialog.showModal(); taskNameInput.focus(); }
 function editTask(event, index) { event.preventDefault(); event.stopPropagation(); openTaskEditor(index); }
-function deleteTask(event, index) { event.preventDefault(); event.stopPropagation(); if (!window.confirm(`Delete "${todayTasks[index]}" from Today’s rhythm?`)) return; todayTasks.splice(index, 1); taskDone.splice(index, 1); persistTasks(); renderTasks(); }
-function saveTask(event) { event.preventDefault(); const name = taskNameInput.value.trim(); if (!name) return; if (editingTaskIndex === null) { todayTasks.push(name); taskDone.push(false); } else todayTasks[editingTaskIndex] = name; persistTasks(); renderTasks(); taskDialog.close(); taskNameInput.value = ""; editingTaskIndex = null; }
+function deleteTask(event, index) { event.preventDefault(); event.stopPropagation(); if (!window.confirm(`Delete "${todayTasks[index]}" from Today’s rhythm?`)) return; todayTasks.splice(index, 1); taskDone.splice(index, 1); taskOutcomes.splice(index, 1); persistTasks(); renderTasks(); }
+function saveTask(event) { event.preventDefault(); const name = taskNameInput.value.trim(); if (!name) return; if (editingTaskIndex === null) { todayTasks.push(name); taskDone.push(false); taskOutcomes.push(""); } else todayTasks[editingTaskIndex] = name; persistTasks(); renderTasks(); taskDialog.close(); taskNameInput.value = ""; editingTaskIndex = null; }
 
 document.getElementById("todayDate").textContent = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(new Date());
 applyHubVisibility();
 renderCustomHubs();
 renderLinks();
+renderStudyTopicOptions();
 renderTasks();
+renderYesterdayTasks();
+renderHistoryCalendar();
+renderSelectedHistoryDate();
+
+if (prevMonthButton) prevMonthButton.addEventListener("click", () => setHistoryMonth(-1));
+if (nextMonthButton) nextMonthButton.addEventListener("click", () => setHistoryMonth(1));
+if (document.getElementById("openHistoryCalendarButton")) {
+  document.getElementById("openHistoryCalendarButton").addEventListener("click", openHistoryCalendar);
+}
+if (calendarGrid) {
+  calendarGrid.addEventListener("click", (event) => {
+    const target = event.target.closest(".calendar-day");
+    if (!target) return;
+    selectedHistoryDate = target.dataset.dateKey;
+    renderHistoryCalendar();
+    renderSelectedHistoryDate();
+  });
+}
+const checklist = document.getElementById("checklist");
+let draggedTaskIndex = null;
+if (checklist) {
+  checklist.addEventListener("dragstart", (event) => {
+    const row = event.target.closest(".check-row");
+    if (!row) return;
+    draggedTaskIndex = Number(row.dataset.taskIndex);
+    row.classList.add("dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(draggedTaskIndex));
+  });
+  checklist.addEventListener("dragover", (event) => {
+    if (event.target.closest(".check-row")) event.preventDefault();
+  });
+  checklist.addEventListener("drop", (event) => {
+    event.preventDefault();
+    const row = event.target.closest(".check-row");
+    if (!row) return;
+    reorderTask(draggedTaskIndex, Number(row.dataset.taskIndex));
+    draggedTaskIndex = null;
+  });
+  checklist.addEventListener("dragend", (event) => {
+    event.target.closest(".check-row")?.classList.remove("dragging");
+    draggedTaskIndex = null;
+  });
+}
