@@ -1,14 +1,26 @@
-const storedLinks = JSON.parse(localStorage.getItem("placementLinks") || "{}");
+function getActiveProfile() {
+  try {
+    return JSON.parse(localStorage.getItem("campusPilotActiveProfile") || "null");
+  } catch (error) {
+    return null;
+  }
+}
+
+const activeProfile = getActiveProfile();
+const profileStoragePrefix = activeProfile ? `campusPilot_${activeProfile.id}_` : "campusPilot_guest_";
+function storageKey(key) { return `${profileStoragePrefix}${key}`; }
+
+const storedLinks = JSON.parse(localStorage.getItem(storageKey("placementLinks")) || "{}");
 const links = { dsa: [], subjects: [] };
-const removedHubs = JSON.parse(localStorage.getItem("placementRemovedHubs") || "[]");
+const removedHubs = JSON.parse(localStorage.getItem(storageKey("placementRemovedHubs")) || "[]");
 const defaultTasks = ["Complete one DSA problem", "Revise one engineering topic", "Work on Aptitude", "Write down one thing I learned"];
-const todayTasks = JSON.parse(localStorage.getItem("placementTasks") || JSON.stringify(defaultTasks)).map((task) => typeof task === "string" ? task : task.name);
+const todayTasks = JSON.parse(localStorage.getItem(storageKey("placementTasks")) || JSON.stringify(defaultTasks)).map((task) => typeof task === "string" ? task : task.name);
 defaultTasks.forEach((task) => { if (!todayTasks.includes(task)) todayTasks.push(task); });
-const taskDone = JSON.parse(localStorage.getItem("placementTaskProgress") || "[]");
-const taskOutcomes = JSON.parse(localStorage.getItem("placementTaskOutcomes") || "[]");
-const customHubs = JSON.parse(localStorage.getItem("placementCustomHubs") || "[]");
+const taskDone = JSON.parse(localStorage.getItem(storageKey("placementTaskProgress")) || "[]");
+const taskOutcomes = JSON.parse(localStorage.getItem(storageKey("placementTaskOutcomes")) || "[]");
+const customHubs = JSON.parse(localStorage.getItem(storageKey("placementCustomHubs")) || "[]");
 customHubs.forEach((hub) => { links[hub.id] = Array.isArray(hub.sources) ? hub.sources : []; });
-const DAILY_HISTORY_KEY = "placementDailyHistory";
+const DAILY_HISTORY_KEY = storageKey("placementDailyHistory");
 
 function getDateKey(date = new Date()) {
   const normalized = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -288,8 +300,8 @@ function hubDetails(resource) {
   if (resource === "subjects") return { name: "Engineering subjects" };
   return customHubs.find((hub) => hub.id === resource) || { name: "Study hub" };
 }
-function persistLinks() { localStorage.setItem("placementLinks", JSON.stringify(links)); }
-function persistCustomHubs() { localStorage.setItem("placementCustomHubs", JSON.stringify(customHubs)); }
+function persistLinks() { localStorage.setItem(storageKey("placementLinks"), JSON.stringify(links)); }
+function persistCustomHubs() { localStorage.setItem(storageKey("placementCustomHubs"), JSON.stringify(customHubs)); }
 function renderCustomHubs() {
   document.getElementById("customHubs").innerHTML = customHubs.map((hub) => `<article class="resource-card custom"><div class="resource-top"><span class="resource-icon">+</span><span class="resource-type">Custom hub</span></div><h3>${escapeHtml(hub.name)}</h3><p>Your personal collection of study sources, organized your way.</p><div class="resource-list" id="${hub.id}Links"></div><div class="resource-footer"><div class="actions"><button class="action" type="button" onclick="openAll('${hub.id}')">View all playlists</button><button class="action primary" type="button" onclick="openEditor('${hub.id}')">+ Add source</button></div><div class="resource-meta"><button class="reset-link" type="button" onclick="resetSources('${hub.id}')">Reset sources</button><span class="resource-link" id="${hub.id}Label">No sources saved yet</span></div></div></article>`).join("");
   customHubs.forEach((hub) => { labels[hub.id] = document.getElementById(`${hub.id}Label`); lists[hub.id] = document.getElementById(`${hub.id}Links`); });
@@ -320,7 +332,7 @@ function editLink(resource, index) { activeResource = resource; editingIndex = i
 function deleteLink(resource, index) { const item = links[resource][index]; if (!window.confirm(`Delete "${item.name}" from your saved sources?`)) return; links[resource].splice(index, 1); persistLinks(); renderLinks(); if (document.getElementById("allDialog").open) renderAllPlaylists(); }
 function saveLink(event) { event.preventDefault(); if (savingLink) return; savingLink = true; saveLinkButton.disabled = true; const item = { name: nameInput.value.trim(), description: descriptionInput.value.trim(), priority: normalizePriority(priorityInput.value), url: input.value.trim() }; const duplicateIndex = links[activeResource].findIndex((saved) => saved.url === item.url && saved.url); if (editingIndex === null && duplicateIndex !== -1) links[activeResource][duplicateIndex] = item; else if (editingIndex === null) links[activeResource].push(item); else links[activeResource][editingIndex] = item; persistLinks(); const hub = customHubs.find((item) => item.id === activeResource); if (hub) { hub.sources = links[activeResource]; persistCustomHubs(); } renderLinks(); renderStudyTopicOptions(); if (document.getElementById("allDialog").open) renderAllPlaylists(); resetLinkForm(); editingIndex = null; dialog.close(); }
 dialog.addEventListener("close", resetLinkForm);
-function refreshLinks() { let latest = {}; try { latest = JSON.parse(localStorage.getItem("placementLinks") || "{}"); } catch (error) {} Object.keys(links).forEach((key) => { const saved = latest[key]; const normalized = Array.isArray(saved) ? saved.map((item) => ({ name: item.name || "Saved source", url: item.url || "", description: item.description || "", priority: normalizePriority(item.priority) })) : typeof saved === "string" && saved ? [{ name: "Saved source", url: saved, description: "", priority: 1 }] : []; links[key].splice(0, links[key].length, ...normalized); }); }
+function refreshLinks() { let latest = {}; try { latest = JSON.parse(localStorage.getItem(storageKey("placementLinks")) || "{}"); } catch (error) {} Object.keys(links).forEach((key) => { const saved = latest[key]; const normalized = Array.isArray(saved) ? saved.map((item) => ({ name: item.name || "Saved source", url: item.url || "", description: item.description || "", priority: normalizePriority(item.priority) })) : typeof saved === "string" && saved ? [{ name: "Saved source", url: saved, description: "", priority: 1 }] : []; links[key].splice(0, links[key].length, ...normalized); }); }
 function resetSources(resource) { if (!window.confirm(`Remove all saved sources from ${hubDetails(resource).name}? This cannot be undone, but you can add them again afterward.`)) return; links[resource].splice(0, links[resource].length); persistLinks(); renderLinks(); if (document.getElementById("allDialog").open && allResource === resource) renderAllPlaylists(); }
 function resetDsaSources() { resetSources("dsa"); }
 function resetSubjectSources() { resetSources("subjects"); }
@@ -330,12 +342,12 @@ function openHubCreator() { hubNameInput.value = ""; hubDialog.showModal(); hubN
 function createStudyHub(event) { event.preventDefault(); const name = hubNameInput.value.trim(); if (!name) return; const id = `hub-${Date.now()}`; customHubs.push({ id, name, sources: [] }); links[id] = []; persistCustomHubs(); renderCustomHubs(); renderLinks(); renderStudyTopicOptions(); hubDialog.close(); hubNameInput.value = ""; }
 function applyHubVisibility() { document.getElementById("dsaCard").hidden = removedHubs.includes("dsa"); document.getElementById("subjectsCard").hidden = removedHubs.includes("subjects"); document.getElementById("restoreHubsButton").hidden = removedHubs.length === 0; }
 function openRemoveCards() { removeDsaInput.checked = removedHubs.includes("dsa"); removeSubjectsInput.checked = removedHubs.includes("subjects"); removeCardsDialog.showModal(); }
-function removeSelectedCards(event) { event.preventDefault(); const selected = []; if (removeDsaInput.checked) selected.push("dsa"); if (removeSubjectsInput.checked) selected.push("subjects"); if (!selected.length) return removeCardsDialog.close(); if (!window.confirm(`Remove ${selected.map((resource) => hubDetails(resource).name).join(" and ")} card${selected.length > 1 ? "s" : ""}? Your saved sources will stay safe and can be restored later.`)) return; removedHubs.splice(0, removedHubs.length, ...selected); localStorage.setItem("placementRemovedHubs", JSON.stringify(removedHubs)); applyHubVisibility(); removeCardsDialog.close(); }
-function restoreDefaultHubs() { removedHubs.splice(0, removedHubs.length); localStorage.setItem("placementRemovedHubs", JSON.stringify(removedHubs)); applyHubVisibility(); }
+function removeSelectedCards(event) { event.preventDefault(); const selected = []; if (removeDsaInput.checked) selected.push("dsa"); if (removeSubjectsInput.checked) selected.push("subjects"); if (!selected.length) return removeCardsDialog.close(); if (!window.confirm(`Remove ${selected.map((resource) => hubDetails(resource).name).join(" and ")} card${selected.length > 1 ? "s" : ""}? Your saved sources will stay safe and can be restored later.`)) return; removedHubs.splice(0, removedHubs.length, ...selected); localStorage.setItem(storageKey("placementRemovedHubs"), JSON.stringify(removedHubs)); applyHubVisibility(); removeCardsDialog.close(); }
+function restoreDefaultHubs() { removedHubs.splice(0, removedHubs.length); localStorage.setItem(storageKey("placementRemovedHubs"), JSON.stringify(removedHubs)); applyHubVisibility(); }
 function persistTasks() {
-  localStorage.setItem("placementTasks", JSON.stringify(todayTasks));
-  localStorage.setItem("placementTaskProgress", JSON.stringify(taskDone));
-  localStorage.setItem("placementTaskOutcomes", JSON.stringify(taskOutcomes));
+  localStorage.setItem(storageKey("placementTasks"), JSON.stringify(todayTasks));
+  localStorage.setItem(storageKey("placementTaskProgress"), JSON.stringify(taskDone));
+  localStorage.setItem(storageKey("placementTaskOutcomes"), JSON.stringify(taskOutcomes));
   persistDailyProgress();
 }
 function updateProgress() {
@@ -412,6 +424,75 @@ function editTask(event, index) { event.preventDefault(); event.stopPropagation(
 function deleteTask(event, index) { event.preventDefault(); event.stopPropagation(); if (!window.confirm(`Delete "${todayTasks[index]}" from Today’s rhythm?`)) return; todayTasks.splice(index, 1); taskDone.splice(index, 1); taskOutcomes.splice(index, 1); persistTasks(); renderTasks(); }
 function saveTask(event) { event.preventDefault(); const name = taskNameInput.value.trim(); if (!name) return; if (editingTaskIndex === null) { todayTasks.push(name); taskDone.push(false); taskOutcomes.push(""); } else todayTasks[editingTaskIndex] = name; persistTasks(); renderTasks(); taskDialog.close(); taskNameInput.value = ""; editingTaskIndex = null; }
 
+function showCampusHome() {
+  document.getElementById("authView").hidden = true;
+  document.getElementById("campusView").hidden = false;
+  document.getElementById("studioView").hidden = true;
+  window.scrollTo(0, 0);
+}
+
+function showPlacementStudio() {
+  document.getElementById("authView").hidden = true;
+  document.getElementById("campusView").hidden = true;
+  document.getElementById("studioView").hidden = false;
+  const profileNote = document.getElementById("studioProfileNote");
+  if (profileNote && activeProfile) profileNote.textContent = `Personalized for ${activeProfile.name}.`;
+  window.scrollTo(0, 0);
+}
+
+function demoLogout() {
+  localStorage.removeItem("campusPilotActiveProfile");
+  window.location.reload();
+}
+
+function initializePortal() {
+  const authView = document.getElementById("authView");
+  const campusView = document.getElementById("campusView");
+  const studioView = document.getElementById("studioView");
+  const loginForm = document.getElementById("loginForm");
+  const loginError = document.getElementById("loginError");
+  const greeting = document.getElementById("studentGreeting");
+  const ownerPanel = document.getElementById("ownerPanel");
+  const campusDate = document.getElementById("campusDate");
+
+  if (!activeProfile) {
+    authView.hidden = false;
+    campusView.hidden = true;
+    studioView.hidden = true;
+  } else {
+    greeting.textContent = activeProfile.name;
+    const today = new Date();
+    document.getElementById("campusDay").textContent = new Intl.DateTimeFormat("en-US", { day: "2-digit" }).format(today);
+    campusDate.textContent = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(today);
+    ownerPanel.hidden = activeProfile.role !== "owner";
+    showCampusHome();
+  }
+
+  loginForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const name = document.getElementById("studentNameInput").value.trim();
+    const identity = document.getElementById("studentEmailInput").value.trim().toLowerCase();
+    const password = document.getElementById("studentPasswordInput").value;
+    const role = document.getElementById("accountTypeInput").value;
+    if (name.length < 2 || identity.length < 2 || password.length < 4) {
+      loginError.textContent = "Enter your name, student ID or email, and a 4-character demo password.";
+      loginError.hidden = false;
+      return;
+    }
+    const profile = { id: identity.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""), name, identity, role };
+    localStorage.setItem("campusPilotActiveProfile", JSON.stringify(profile));
+    window.location.reload();
+  });
+
+  document.getElementById("campusLogoutButton").addEventListener("click", demoLogout);
+  document.querySelectorAll("[data-feature]").forEach((feature) => feature.addEventListener("click", () => {
+    if (feature.dataset.feature === "placement") return showPlacementStudio();
+    const message = document.getElementById("featureMessage");
+    message.textContent = `${feature.querySelector("strong").textContent} will be available in a future CampusPilot update.`;
+    message.hidden = false;
+  }));
+}
+
 document.getElementById("todayDate").textContent = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(new Date());
 applyHubVisibility();
 renderCustomHubs();
@@ -462,3 +543,15 @@ if (checklist) {
     draggedTaskIndex = null;
   });
 }
+
+initializePortal();
+
+let previousScrollPosition = window.scrollY;
+window.addEventListener("scroll", () => {
+  const currentScrollPosition = window.scrollY;
+  const campusView = document.getElementById("campusView");
+  if (!campusView || campusView.hidden) return;
+  if (currentScrollPosition < previousScrollPosition - 4) campusView.classList.add("scrolling-up");
+  if (currentScrollPosition > previousScrollPosition + 4) campusView.classList.remove("scrolling-up");
+  previousScrollPosition = currentScrollPosition;
+}, { passive: true });

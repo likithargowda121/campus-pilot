@@ -4,15 +4,51 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#f5f1e8" />
-  <title>Placement Studio</title>
+  <title>CampusPilot | Personalized learning hub</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="shell">
-    <header class="topbar"><div class="brand"><span class="brand-mark">P</span> Placement Studio</div><div class="top-note">Your preparation, in one place.</div></header>
+  <main id="authView" class="portal-view auth-view">
+    <section class="auth-panel">
+      <div class="auth-brand"><span class="brand-mark">C</span><span>CampusPilot</span></div>
+      <p class="eyebrow">Your personalized learning hub</p>
+      <h1>Make your next move count.</h1>
+      <p class="auth-copy">Sign in to keep your placement preparation, study rhythm, and progress in one focused space.</p>
+      <form id="loginForm" class="login-form">
+        <label for="studentNameInput">Your name</label>
+        <input id="studentNameInput" type="text" placeholder="e.g. Ananya Sharma" autocomplete="name" required />
+        <label for="studentEmailInput">Email or student ID</label>
+        <input id="studentEmailInput" type="text" placeholder="e.g. ananya@example.com" autocomplete="username" required />
+        <label for="studentPasswordInput">Demo password</label>
+        <input id="studentPasswordInput" type="password" placeholder="At least 4 characters" minlength="4" autocomplete="current-password" required />
+        <label for="accountTypeInput">Sign in as</label>
+        <select id="accountTypeInput"><option value="student">Student</option><option value="owner">CampusPilot owner</option></select>
+        <p id="loginError" class="form-error" role="alert" hidden></p>
+        <button class="portal-button" type="submit">Enter CampusPilot <span>→</span></button>
+      </form>
+      <small class="demo-note">Demo mode: your profile is saved only in this browser.</small>
+    </section>
+    <aside class="auth-art" aria-hidden="true"><span class="orbit orbit-one"></span><span class="orbit orbit-two"></span><div class="art-card"><span>01</span><strong>Learn<br />with direction.</strong><small>Placement Studio is ready when you are.</small></div></aside>
+  </main>
+
+  <main id="campusView" class="portal-view campus-view" hidden>
+    <div class="scroll-semicircles" aria-hidden="true"><span class="semi semi-one"></span><span class="semi semi-two"></span><span class="semi semi-three"></span></div>
+    <header class="campus-header"><div class="auth-brand"><span class="brand-mark">C</span><span>CampusPilot</span></div><button id="campusLogoutButton" class="text-button" type="button">Log out</button></header>
+    <section class="campus-hero"><div><p class="eyebrow">Your student hub</p><h1>Welcome, <span id="studentGreeting">Student</span>.</h1><p class="auth-copy">A calmer place to plan your work, build your edge, and keep moving.</p></div><div class="date-mood-card"><div class="date-mood-top"><span class="date-mood-label">Today’s marker</span><span class="date-mood-spark">✦</span></div><div class="date-mood-main"><strong id="campusDay">08</strong><span id="campusDate">September 2026</span></div><div class="date-mood-bottom"><span>Show up for the next small win.</span><b>↗</b></div></div></section>
+    <section class="feature-section"><div class="section-heading"><div><p class="eyebrow">Your toolkit</p><h2>Choose where to focus.</h2></div><p>Three paths for the work ahead.</p></div><div class="feature-lines">
+      <button class="feature-line placement-feature" type="button" data-feature="placement"><span class="feature-number">01</span><span><strong>Placement Studio</strong><small>Playlists, subjects, tasks, and progress for placement preparation.</small></span><span class="feature-arrow">↗</span></button>
+      <button class="feature-line" type="button" data-feature="planner"><span class="feature-number">02</span><span><strong>Study Planner</strong><small>A focused space for the study plans you will add next.</small></span><span class="feature-status">Coming soon</span></button>
+      <button class="feature-line" type="button" data-feature="progress"><span class="feature-number">03</span><span><strong>Progress Tracker</strong><small>See your consistency grow across every CampusPilot feature.</small></span><span class="feature-status">Coming soon</span></button>
+    </div></section>
+    <section id="ownerPanel" class="owner-panel" hidden><span class="owner-badge">Owner view</span><h2>CampusPilot control room</h2><p>Use this demo owner space for platform-level tools. Your student progress stays in your separate student profile.</p></section>
+    <p id="featureMessage" class="feature-message" role="status" hidden></p>
+  </main>
+
+  <div id="studioView" class="shell" hidden>
+    <header class="topbar"><div class="brand"><span class="brand-mark">P</span> Placement Studio</div><div class="top-actions"><button class="text-button" type="button" onclick="showCampusHome()">CampusPilot home</button><button class="text-button" type="button" onclick="demoLogout()">Log out</button></div></header>
     <section class="hero"><div><p class="eyebrow">The next chapter starts here</p><h1>Build your edge,<br />one session at a time.</h1><p class="hero-copy">A simple home base for the playlists, practice, and core subjects that move your placement journey forward.</p></div><aside class="date-card"><span class="date-card-label">Today's focus</span><strong id="todayDate">Loading...</strong><small>Show up for the version of you that gets the offer.</small></aside></section>
     <main>
       <div class="section-heading"><h2>Your study hubs</h2><p>Keep your most-used sources one click away.</p></div>
@@ -24,7 +60,7 @@
       <div class="card-management"><button class="action add-hub-button" type="button" onclick="openHubCreator()">+ Add study hub</button><button class="action" type="button" onclick="openRemoveCards()">Remove cards</button><button class="action" id="restoreHubsButton" type="button" onclick="restoreDefaultHubs()" hidden>Restore default hubs</button></div>
       <section class="lower-grid"><div class="panel"><h2>Today’s rhythm</h2><p class="panel-intro">Small, consistent wins compound quickly.</p><div class="checklist" id="checklist"></div><div class="task-footer"><button class="action" type="button" onclick="openTaskEditor()">+ Add task</button></div><section class="completed-today"><div class="panel-head"><div><h3>Tasks completed today</h3><span class="completed-today-date" id="completedTodayDate"></span></div><strong class="completed-count" id="completedCount">0 completed</strong></div><div id="completedTodayList"></div></section><div class="yesterday-panel"><button class="history-launch" type="button" id="openHistoryCalendarButton"><span><strong>Previous completed tasks and progress</strong><small>Review your calendar, completed topics, and daily work.</small></span><span class="history-launch-arrow">→</span></button></div></div><aside class="focus-panel"><div class="focus-panel-top"><span class="focus-kicker">Today’s focus</span><span class="focus-spark">✦</span></div><h3>Keep the rhythm going.</h3><p class="focus-copy">One completed topic is enough to move the day forward.</p><div class="focus-meter"><div class="focus-ring" id="focusRing"><div><strong id="focusPercent">0%</strong><span>complete</span></div></div><div class="focus-meter-copy"><strong id="focusTaskCount">0 of 0</strong><span>tasks finished</span></div></div><div class="focus-footer"><span>Quiet progress is still progress.</span><span class="focus-arrow">↗</span></div></aside></section>
     </main>
-    <footer>Made for the long game. Your links stay saved in this browser.</footer>
+    <footer>Made for the long game. <span id="studioProfileNote">Your links stay saved in this browser.</span></footer>
   </div>
   <dialog id="linkDialog"><form id="linkForm" class="dialog-inner" method="dialog" onsubmit="saveLink(event)"><h2 id="dialogTitle">Add a source</h2><p>Paste the playlist or syllabus link you want to reach quickly.</p><label for="nameInput">Source name</label><input id="nameInput" type="text" placeholder="e.g. Striver's A2Z Sheet" required /><div class="field-gap"></div><label for="descriptionInput">What is this playlist for?</label><textarea id="descriptionInput" placeholder="e.g. Covers arrays, strings, and interview patterns."></textarea><div class="field-gap"></div><label for="priorityInput">Priority number <span class="normal-weight">(1 = most important)</span></label><input id="priorityInput" type="number" min="1" step="1" value="1" required /><div class="field-gap"></div><label for="linkInput">Source URL</label><input id="linkInput" type="url" placeholder="https://..." required /><div class="dialog-actions"><button class="action" type="button" onclick="linkDialog.close()">Cancel</button><button id="saveLinkButton" class="action primary" type="submit">Save link</button></div></form></dialog>
   <dialog id="allDialog" class="all-dialog"><div class="all-dialog-inner"><div class="all-dialog-header"><div><h2 id="allDialogTitle">All playlists</h2><p>Choose what you want to study next. Lower numbers appear first.</p></div><select id="priorityFilter" onchange="renderAllPlaylists()"><option value="all">All priorities</option><option value="1">Priority 1</option><option value="2">Priority 2</option><option value="3">Priority 3</option><option value="4">Priority 4</option><option value="5">Priority 5</option></select></div><div class="all-list" id="allList"></div><div class="dialog-actions"><button class="action" type="button" onclick="allDialog.close()">Close</button></div></div></dialog>
