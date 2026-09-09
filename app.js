@@ -21,6 +21,116 @@ const taskOutcomes = JSON.parse(localStorage.getItem(storageKey("placementTaskOu
 const customHubs = JSON.parse(localStorage.getItem(storageKey("placementCustomHubs")) || "[]");
 customHubs.forEach((hub) => { links[hub.id] = Array.isArray(hub.sources) ? hub.sources : []; });
 const DAILY_HISTORY_KEY = storageKey("placementDailyHistory");
+const ACADEMIC_TRACK_KEY = storageKey("academicTrack");
+const academicDefaults = { course: "", currentSemester: "1", semesters: [] };
+
+function getAcademicState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ACADEMIC_TRACK_KEY) || "null");
+    if (!saved || typeof saved !== "object") return { ...academicDefaults };
+    return {
+      course: typeof saved.course === "string" ? saved.course : "",
+      currentSemester: typeof saved.currentSemester === "string" ? saved.currentSemester : "1",
+      semesters: Array.isArray(saved.semesters) ? saved.semesters : []
+    };
+  } catch (error) {
+    return { ...academicDefaults };
+  }
+}
+
+let academicState = getAcademicState();
+
+function saveAcademicState() {
+  localStorage.setItem(ACADEMIC_TRACK_KEY, JSON.stringify(academicState));
+}
+
+function ensureAcademicSemester(semesterNumber) {
+  const parsedSemester = Number(semesterNumber);
+  if (!Number.isFinite(parsedSemester)) return null;
+
+  let semester = academicState.semesters.find((entry) => Number(entry.number) === parsedSemester);
+  if (semester) return semester;
+
+  semester = { id: `semester-${parsedSemester}-${Date.now()}`, number: parsedSemester, subjects: [] };
+  academicState.semesters.push(semester);
+  saveAcademicState();
+  return semester;
+}
+
+function renderAcademicSemesters() {
+  const grid = document.getElementById("semesterGrid");
+  if (!grid) return;
+
+  const semesterCards = [...academicState.semesters]
+    .sort((first, second) => Number(first.number) - Number(second.number))
+    .map((semester) => {
+      const subjects = Array.isArray(semester.subjects) ? semester.subjects : [];
+      const subjectList = subjects.length
+        ? subjects.map((subject) => `<li><strong>${escapeHtml(subject.name)}</strong><span>${escapeHtml(subject.code || "No code added")}</span></li>`).join("")
+        : "<li class='empty-semester'>No subjects added yet.</li>";
+
+      return `
+        <article class="semester-card">
+          <div class="semester-card-header">
+            <div>
+              <p class="eyebrow">Academic track</p>
+              <h3>Semester ${escapeHtml(semester.number)}</h3>
+            </div>
+            <span class="semester-count">${subjects.length} subject${subjects.length === 1 ? "" : "s"}</span>
+          </div>
+          <ul class="semester-subject-list">${subjectList}</ul>
+          <button class="action primary" type="button" onclick="addAcademicSubject(${semester.number})">+ Add subject</button>
+        </article>
+      `;
+    });
+
+  if (!semesterCards.length) {
+    grid.innerHTML = '<div class="empty-state academic-empty">Create a semester track to start building your course map.</div>';
+  } else {
+    grid.innerHTML = semesterCards.join("");
+  }
+
+  const profileSummary = document.getElementById("academicProfileSummary");
+  const summaryNote = document.getElementById("academicSummaryNote");
+  if (profileSummary) {
+    profileSummary.textContent = academicState.course ? academicState.course : "No course set yet";
+  }
+  if (summaryNote) {
+    summaryNote.textContent = academicState.course ? `Current focus: Semester ${academicState.currentSemester}` : "Choose your course and semester to begin.";
+  }
+}
+
+function addAcademicSubject(semesterNumber) {
+  const subjectName = window.prompt("Enter the subject name", "Data Structures");
+  if (subjectName === null || !subjectName.trim()) return;
+
+  const subjectCode = window.prompt("Enter the subject code", "CS201");
+  if (subjectCode === null || !subjectCode.trim()) return;
+
+  const semester = ensureAcademicSemester(semesterNumber);
+  if (!semester) return;
+
+  const parsedSemester = Number(semesterNumber);
+  academicState.currentSemester = String(parsedSemester);
+  semester.subjects = Array.isArray(semester.subjects) ? semester.subjects : [];
+  semester.subjects.push({
+    id: `subject-${Date.now()}`,
+    name: subjectName.trim(),
+    code: subjectCode.trim(),
+    resources: []
+  });
+
+  saveAcademicState();
+  renderAcademicSemesters();
+}
+
+function showAcademicStudio() {
+  document.getElementById("authView").hidden = true;
+  document.getElementById("campusView").hidden = true;
+  document.getElementById("studioView").hidden = true;
+  document.getElementById("academicView").hidden = false;
+  window.scrollTo(0, 0);
+}
 
 function getDateKey(date = new Date()) {
   const normalized = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -351,6 +461,7 @@ function persistTasks() {
   persistDailyProgress();
 }
 function updateProgress() {
+  if (!document.getElementById("completedCount")) return;
   const completedCount = taskDone.slice(0, todayTasks.length).filter(Boolean).length;
   document.getElementById("completedCount").textContent = `${completedCount} completed`;
   renderFocusPanel();
@@ -366,7 +477,7 @@ function renderFocusPanel() {
   percentLabel.textContent = `${percent}%`;
   taskCount.textContent = `${completedCount} of ${todayTasks.length}`;
 }
-function renderTasks() { document.getElementById("checklist").innerHTML = todayTasks.map((task, index) => `<label class="check-row" draggable="true" data-task-index="${index}"><span class="drag-handle" aria-hidden="true">⋮⋮</span><input type="checkbox" ${taskDone[index] ? "checked" : ""} onchange="toggleTask(${index}, this.checked)" /><span class="task-name">${escapeHtml(task)}</span><span class="task-actions"><button class="task-action" type="button" onclick="editTask(event, ${index})" aria-label="Edit task">✎</button><button class="task-action" type="button" onclick="deleteTask(event, ${index})" aria-label="Delete task">×</button></span></label>`).join(""); updateProgress(); renderCompletedToday(); }
+function renderTasks() { const checklist = document.getElementById("checklist"); if (!checklist) return; checklist.innerHTML = todayTasks.map((task, index) => `<label class="check-row" draggable="true" data-task-index="${index}"><span class="drag-handle" aria-hidden="true">⋮⋮</span><input type="checkbox" ${taskDone[index] ? "checked" : ""} onchange="toggleTask(${index}, this.checked)" /><span class="task-name">${escapeHtml(task)}</span><span class="task-actions"><button class="task-action" type="button" onclick="editTask(event, ${index})" aria-label="Edit task">✎</button><button class="task-action" type="button" onclick="deleteTask(event, ${index})" aria-label="Delete task">×</button></span></label>`).join(""); updateProgress(); renderCompletedToday(); }
 function reorderTask(fromIndex, toIndex) {
   if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
   const moveItem = (items) => items.splice(toIndex, 0, items.splice(fromIndex, 1)[0]);
@@ -386,7 +497,7 @@ function renderCompletedToday() {
     completedList.innerHTML = '<p class="completed-empty">Check off a task above to record what you accomplished.</p>';
     return;
   }
-  completedList.innerHTML = completedTasks.map(({ task, index }) => `<article class="completed-task"><div class="completed-task-heading"><span class="completed-check">✓</span><strong>${escapeHtml(task)}</strong></div><label class="outcome-label" for="taskOutcome-${index}">What did you complete?</label><textarea id="taskOutcome-${index}" class="task-outcome" placeholder="Add a result, insight, or note..." oninput="updateTaskOutcome(${index}, this.value)">${escapeHtml(taskOutcomes[index] || "")}</textarea></article>`).join("");
+  completedList.innerHTML = completedTasks.map(({ task, index }) => `<article class="completed-task"><div class="completed-task-heading"><span class="completed-check">✓</span><strong>${escapeHtml(task)}</strong><div class="outcome-actions saved-link-actions"><button class="menu-trigger" type="button" data-tooltip="Choose an action for this note" aria-label="Choose an action for this note" aria-expanded="false" onclick="toggleLinkMenu(this)">⋮</button><div class="link-menu"><button type="button" onclick="editTaskOutcome(${index})">Update note</button></div></div></div><label class="outcome-label" for="taskOutcome-${index}">What did you complete?</label><textarea id="taskOutcome-${index}" class="task-outcome" maxlength="300" disabled>${escapeHtml(taskOutcomes[index] || "")}</textarea><div class="outcome-actions"><button class="action primary" type="button" onclick="saveTaskOutcome(${index})" hidden>Save update</button><button class="action" type="button" onclick="cancelTaskOutcomeEdit(${index})" hidden>Cancel</button></div></article>`).join("");
 }
 function toggleTask(index, checked) {
   if (!checked) {
@@ -418,7 +529,9 @@ function cancelTaskOutcome() {
   outcomeDialog.close();
   renderTasks();
 }
-function updateTaskOutcome(index, outcome) { taskOutcomes[index] = outcome.trim(); persistTasks(); }
+function editTaskOutcome(index) { const input = document.getElementById(`taskOutcome-${index}`); const card = input.closest(".completed-task"); const actions = card.querySelector(".outcome-actions:not(.saved-link-actions)").querySelectorAll("button"); const menu = card.querySelector(".link-menu"); menu.classList.remove("open"); menu.previousElementSibling.setAttribute("aria-expanded", "false"); input.disabled = false; actions[0].hidden = false; actions[1].hidden = false; input.focus(); }
+function saveTaskOutcome(index) { const input = document.getElementById(`taskOutcome-${index}`); const outcome = input.value.trim(); if (!outcome) return; taskOutcomes[index] = outcome; persistTasks(); renderCompletedToday(); }
+function cancelTaskOutcomeEdit(index) { renderCompletedToday(); }
 function openTaskEditor(index = null) { editingTaskIndex = index; taskDialogTitle.textContent = index === null ? "Add a task" : "Edit task"; taskNameInput.value = index === null ? "" : todayTasks[index]; taskDialog.showModal(); taskNameInput.focus(); }
 function editTask(event, index) { event.preventDefault(); event.stopPropagation(); openTaskEditor(index); }
 function deleteTask(event, index) { event.preventDefault(); event.stopPropagation(); if (!window.confirm(`Delete "${todayTasks[index]}" from Today’s rhythm?`)) return; todayTasks.splice(index, 1); taskDone.splice(index, 1); taskOutcomes.splice(index, 1); persistTasks(); renderTasks(); }
@@ -428,6 +541,7 @@ function showCampusHome() {
   document.getElementById("authView").hidden = true;
   document.getElementById("campusView").hidden = false;
   document.getElementById("studioView").hidden = true;
+  document.getElementById("academicView").hidden = true;
   window.scrollTo(0, 0);
 }
 
@@ -435,6 +549,7 @@ function showPlacementStudio() {
   document.getElementById("authView").hidden = true;
   document.getElementById("campusView").hidden = true;
   document.getElementById("studioView").hidden = false;
+  document.getElementById("academicView").hidden = true;
   const profileNote = document.getElementById("studioProfileNote");
   if (profileNote && activeProfile) profileNote.textContent = `Personalized for ${activeProfile.name}.`;
   window.scrollTo(0, 0);
@@ -449,16 +564,23 @@ function initializePortal() {
   const authView = document.getElementById("authView");
   const campusView = document.getElementById("campusView");
   const studioView = document.getElementById("studioView");
+  const academicView = document.getElementById("academicView");
   const loginForm = document.getElementById("loginForm");
   const loginError = document.getElementById("loginError");
   const greeting = document.getElementById("studentGreeting");
   const ownerPanel = document.getElementById("ownerPanel");
   const campusDate = document.getElementById("campusDate");
+  const academicProfileForm = document.getElementById("academicProfileForm");
+  const courseNameInput = document.getElementById("courseNameInput");
+  const semesterSelect = document.getElementById("semesterSelect");
 
   if (!activeProfile) {
-    authView.hidden = false;
-    campusView.hidden = true;
-    studioView.hidden = true;
+    greeting.textContent = "Student";
+    const today = new Date();
+    document.getElementById("campusDay").textContent = new Intl.DateTimeFormat("en-US", { day: "2-digit" }).format(today);
+    campusDate.textContent = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(today);
+    ownerPanel.hidden = true;
+    showCampusHome();
   } else {
     greeting.textContent = activeProfile.name;
     const today = new Date();
@@ -468,7 +590,25 @@ function initializePortal() {
     showCampusHome();
   }
 
-  loginForm.addEventListener("submit", (event) => {
+  if (courseNameInput) courseNameInput.value = academicState.course || "";
+  if (semesterSelect) semesterSelect.value = academicState.currentSemester || "1";
+
+  if (academicProfileForm) {
+    academicProfileForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const course = courseNameInput.value.trim();
+      const semester = semesterSelect.value;
+      if (!course) return;
+      academicState.course = course;
+      academicState.currentSemester = semester;
+      ensureAcademicSemester(semester);
+      saveAcademicState();
+      renderAcademicSemesters();
+      showAcademicStudio();
+    });
+  }
+
+  if (loginForm) loginForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const name = document.getElementById("studentNameInput").value.trim();
     const identity = document.getElementById("studentEmailInput").value.trim().toLowerCase();
@@ -484,9 +624,16 @@ function initializePortal() {
     window.location.reload();
   });
 
-  document.getElementById("campusLogoutButton").addEventListener("click", demoLogout);
+  const campusLogoutButton = document.getElementById("campusLogoutButton");
+  if (campusLogoutButton) campusLogoutButton.addEventListener("click", demoLogout);
   document.querySelectorAll("[data-feature]").forEach((feature) => feature.addEventListener("click", () => {
     if (feature.dataset.feature === "placement") return showPlacementStudio();
+    if (feature.dataset.feature === "academic") {
+      const message = document.getElementById("featureMessage");
+      message.textContent = "Academic Studio is coming soon.";
+      message.hidden = false;
+      return;
+    }
     const message = document.getElementById("featureMessage");
     message.textContent = `${feature.querySelector("strong").textContent} will be available in a future CampusPilot update.`;
     message.hidden = false;
@@ -495,6 +642,7 @@ function initializePortal() {
 
 document.getElementById("todayDate").textContent = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(new Date());
 applyHubVisibility();
+renderAcademicSemesters();
 renderCustomHubs();
 renderLinks();
 renderStudyTopicOptions();
